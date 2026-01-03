@@ -1,4 +1,17 @@
 spring:
-  mvc:
-    problemdetails:
-      enabled: false
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        format_sql: true
+        highlight_sql: true
+
+cookie:
+  secure: false
+  same-site: Lax
+
+logging:
+  level:
+    org.hibernate.SQL: DEBUG
+    org.hibernate.orm.jdbc.bind: TRACE

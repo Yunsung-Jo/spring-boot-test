@@ -1,0 +1,105 @@
+package dev.yunsung.test.global.auth.security.jwt;
+
+import java.time.Instant;
+import java.util.Collections;
+import java.util.Date;
+
+import javax.crypto.SecretKey;
+
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.stereotype.Component;
+
+import dev.yunsung.test.global.auth.security.principal.UserInfo;
+import io.jsonwebtoken.Claims;
+import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
+import io.jsonwebtoken.Jwts;
+import io.jsonwebtoken.io.Decoders;
+import io.jsonwebtoken.security.Keys;
+
+@Component
+public class JwtTokenProvider {
+
+	private static final String TOKEN = "token";
+
+	private final SecretKey key;
+	private final long accessExpiration;
+	private final long refreshExpiration;
+
+	public JwtTokenProvider(
+		@Value("${jwt.secret}") String secretKey,
+		@Value("${jwt.access-expiration}") long accessExpiration,
+		@Value("${jwt.refresh-expiration}") long refreshExpiration
+	) {
+		byte[] keyBytes = Decoders.BASE64.decode(secretKey);
+		this.key = Keys.hmacShaKeyFor(keyBytes);
+		this.accessExpiration = accessExpiration;
+		this.refreshExpiration = refreshExpiration;
+	}
+
+	public TokenInfo generateAccessToken(UserInfo userInfo) {
+		Instant expiresAt = Instant.now().plusMillis(accessExpiration);
+		String accessToken = Jwts.builder()
+			.subject(userInfo.id().toString())
+			.claim(TOKEN, JwtType.ACCESS.getValue())
+			.expiration(Date.from(expiresAt))
+			.signWith(key)
+			.compact();
+		return TokenInfo.of(accessToken, expiresAt);
+	}
+
+	public TokenInfo generateRefreshToken(UserInfo userInfo) {
+		Instant expiresAt = Instant.now().plusMillis(refreshExpiration);
+		String refreshToken = Jwts.builder()
+			.subject(userInfo.id().toString())
+			.claim(TOKEN, JwtType.REFRESH.getValue())
+			.expiration(Date.from(expiresAt))
+			.signWith(key)
+			.compact();
+		return TokenInfo.of(refreshToken, expiresAt);
+	}
+
+	public Authentication getAuthentication(String token) {
+		Claims claims = parseClaims(token);
+		return new UsernamePasswordAuthenticationToken(UserInfo.from(claims), null, Collections.emptyList());
+	}
+
+	public JwtCode validateAccessToken(String accessToken) {
+		return validateToken(accessToken, JwtType.ACCESS);
+	}
+
+	public JwtCode validateRefreshToken(String refreshToken) {
+		return validateToken(refreshToken, JwtType.REFRESH);
+	}
+
+	private JwtCode validateToken(String token, JwtType jwtType) {
+		try {
+			Claims claims = Jwts.parser()
+				.verifyWith(key)
+				.build()
+				.parseSignedClaims(token)
+				.getPayload();
+			return jwtType.getValue().equals(claims.get(TOKEN, String.class))
+				? JwtCode.VALID_TOKEN
+				: JwtCode.INVALID_TOKEN;
+		} catch (ExpiredJwtException e) {
+			return JwtCode.EXPIRED_TOKEN;
+		} catch (JwtException | IllegalArgumentException e) {
+			return JwtCode.INVALID_TOKEN;
+		}
+	}
+
+	private Claims parseClaims(String token) {
+		try {
+			return Jwts.parser()
+				.verifyWith(key)
+				.build()
+				.parseSignedClaims(token)
+				.getPayload();
+		} catch (ExpiredJwtException e) {
+			return e.getClaims();
+		}
+	}
+}

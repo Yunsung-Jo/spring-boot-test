@@ -1,8 +1,5 @@
 package dev.yunsung.test.global.error;
 
-import java.time.LocalDateTime;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Stream;
 
@@ -34,6 +31,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 
+import dev.yunsung.test.global.auth.security.jwt.JwtCode;
+import io.jsonwebtoken.JwtException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.ConstraintViolationException;
 import lombok.RequiredArgsConstructor;
@@ -46,6 +45,13 @@ public class GlobalExceptionHandler { // ResponseEntityExceptionHandler
 
 	private static final String ERRORS = "errors";
 	private final MessageSource messageSource;
+
+	@ExceptionHandler(JwtException.class)
+	public ProblemDetail handleJwtException(JwtException e) {
+		ProblemDetail problemDetail = getProblemDetail(HttpStatus.UNAUTHORIZED, e.getMessage());
+		problemDetail.setProperty("code", JwtCode.INVALID_TOKEN.name());
+		return problemDetail;
+	}
 
 	// 지원하지 않는 HTTP 메서드로 요청했을 때 발생하는 예외
 	@ExceptionHandler(HttpRequestMethodNotSupportedException.class)
@@ -221,22 +227,12 @@ public class GlobalExceptionHandler { // ResponseEntityExceptionHandler
 		);
 	}
 
-	private Map<String, Object> getProperties() {
-		Map<String, Object> properties = new HashMap<>();
-		properties.put("timestamp", LocalDateTime.now());
-		return properties;
-	}
-
 	private ProblemDetail getProblemDetail(HttpStatusCode statusCode, String detail) {
-		ProblemDetail problemDetail = ProblemDetail.forStatusAndDetail(statusCode, detail);
-		getProperties().forEach(problemDetail::setProperty);
-		return problemDetail;
+		return ProblemDetail.forStatusAndDetail(statusCode, detail);
 	}
 
 	private ProblemDetail getProblemDetail(ErrorResponse errorResponse) {
-		ProblemDetail problemDetail = errorResponse.updateAndGetBody(messageSource, LocaleContextHolder.getLocale());
-		getProperties().forEach(problemDetail::setProperty);
-		return problemDetail;
+		return errorResponse.updateAndGetBody(messageSource, LocaleContextHolder.getLocale());
 	}
 
 	private ProblemDetail getProblemDetail(ErrorResponse errorResponse, String detail) {
