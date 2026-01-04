@@ -1,5 +1,7 @@
 package dev.yunsung.test.global.auth.application;
 
+import java.time.Instant;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -9,7 +11,7 @@ import dev.yunsung.test.global.auth.application.dto.AuthTokens;
 import dev.yunsung.test.global.auth.domain.RefreshToken;
 import dev.yunsung.test.global.auth.error.exception.ExpiredRefreshTokenException;
 import dev.yunsung.test.global.auth.error.exception.InvalidRefreshTokenException;
-import dev.yunsung.test.global.auth.infrastructure.RefreshTokenRepository;
+import dev.yunsung.test.global.auth.infrastructure.persistence.RefreshTokenRepository;
 import dev.yunsung.test.global.auth.security.jwt.JwtCode;
 import dev.yunsung.test.global.auth.security.jwt.JwtTokenProvider;
 import dev.yunsung.test.global.auth.security.jwt.TokenInfo;
@@ -35,21 +37,17 @@ public class AuthService {
 		RefreshToken savedToken = refreshTokenRepository.findByToken(hashedRefreshToken)
 			.orElseThrow(InvalidRefreshTokenException::new);
 
+		refreshTokenRepository.delete(savedToken);
 		if (savedToken.isExpired()) {
-			refreshTokenRepository.delete(savedToken);
 			throw new ExpiredRefreshTokenException();
 		}
 
-		refreshTokenRepository.delete(savedToken);
 		Authentication authentication = jwtTokenProvider.getAuthentication(refreshToken);
-		return generateToken(authentication);
-	}
-
-	private AuthTokens generateToken(Authentication authentication) {
 		UserInfo userInfo = UserInfo.from(authentication.getPrincipal());
-		TokenInfo accessToken = jwtTokenProvider.generateAccessToken(userInfo);
-		TokenInfo refreshToken = generateRefreshToken(authentication);
-		return AuthTokens.of(accessToken, refreshToken);
+		return AuthTokens.of(
+			jwtTokenProvider.generateAccessToken(userInfo),
+			generateRefreshToken(authentication)
+		);
 	}
 
 	public TokenInfo generateRefreshToken(Authentication authentication) {
@@ -73,5 +71,10 @@ public class AuthService {
 		String hashedRefreshToken = HashUtils.generateHash(refreshToken);
 		refreshTokenRepository.findByToken(hashedRefreshToken)
 			.ifPresent(refreshTokenRepository::delete);
+	}
+
+	public void deleteExpiredTokens() {
+		Instant now = Instant.now();
+		refreshTokenRepository.deleteExpiredTokens(now);
 	}
 }
