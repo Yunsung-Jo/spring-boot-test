@@ -55,8 +55,8 @@ cors:
 
 jwt:
   secret: ${JWT_SECRET}
-  access-expiration: ${JWT_ACCESS_EXPIRATION:3600000} # 1시간
-  refresh-expiration: ${JWT_REFRESH_EXPIRATION:604800000} # 7일
+  access-expires-in: ${JWT_ACCESS_EXPIRES_IN:3600} # 1시간
+  refresh-expires-in: ${JWT_REFRESH_EXPIRES_IN:604800} # 7일
 
 server:
   forward-headers-strategy: framework

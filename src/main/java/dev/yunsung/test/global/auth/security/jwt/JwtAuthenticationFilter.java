@@ -18,7 +18,7 @@ import lombok.RequiredArgsConstructor;
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private static final String AUTHORIZATION_HEADER = "Authorization";
-	private static final String GRANT_TYPE = "Bearer ";
+	private static final String AUTH_TYPE = "Bearer ";
 
 	private final JwtTokenProvider jwtTokenProvider;
 
@@ -42,8 +42,8 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
 	private String resolveToken(HttpServletRequest request) {
 		String bearerToken = request.getHeader(AUTHORIZATION_HEADER);
-		if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(GRANT_TYPE)) {
-			return bearerToken.substring(GRANT_TYPE.length());
+		if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(AUTH_TYPE)) {
+			return bearerToken.substring(AUTH_TYPE.length());
 		}
 		return null;
 	}

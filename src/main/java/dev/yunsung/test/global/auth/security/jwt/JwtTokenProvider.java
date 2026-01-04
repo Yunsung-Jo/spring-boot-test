@@ -25,40 +25,40 @@ public class JwtTokenProvider {
 	private static final String TOKEN = "token";
 
 	private final SecretKey key;
-	private final long accessExpiration;
-	private final long refreshExpiration;
+	private final long accessExpiresIn;
+	private final long refreshExpiresIn;
 
 	public JwtTokenProvider(
 		@Value("${jwt.secret}") String secretKey,
-		@Value("${jwt.access-expiration}") long accessExpiration,
-		@Value("${jwt.refresh-expiration}") long refreshExpiration
+		@Value("${jwt.access-expires-in}") long accessExpiresIn,
+		@Value("${jwt.refresh-expires-in}") long refreshExpiresIn
 	) {
 		byte[] keyBytes = Decoders.BASE64.decode(secretKey);
 		this.key = Keys.hmacShaKeyFor(keyBytes);
-		this.accessExpiration = accessExpiration;
-		this.refreshExpiration = refreshExpiration;
+		this.accessExpiresIn = accessExpiresIn;
+		this.refreshExpiresIn = refreshExpiresIn;
 	}
 
 	public TokenInfo generateAccessToken(UserInfo userInfo) {
-		Instant expiresAt = Instant.now().plusMillis(accessExpiration);
+		Instant expiresAt = Instant.now().plusSeconds(accessExpiresIn);
 		String accessToken = Jwts.builder()
 			.subject(userInfo.id().toString())
 			.claim(TOKEN, JwtType.ACCESS.getValue())
 			.expiration(Date.from(expiresAt))
 			.signWith(key)
 			.compact();
-		return TokenInfo.of(accessToken, expiresAt);
+		return TokenInfo.of(accessToken, expiresAt, accessExpiresIn);
 	}
 
 	public TokenInfo generateRefreshToken(UserInfo userInfo) {
-		Instant expiresAt = Instant.now().plusMillis(refreshExpiration);
+		Instant expiresAt = Instant.now().plusSeconds(refreshExpiresIn);
 		String refreshToken = Jwts.builder()
 			.subject(userInfo.id().toString())
 			.claim(TOKEN, JwtType.REFRESH.getValue())
 			.expiration(Date.from(expiresAt))
 			.signWith(key)
 			.compact();
-		return TokenInfo.of(refreshToken, expiresAt);
+		return TokenInfo.of(refreshToken, expiresAt, refreshExpiresIn);
 	}
 
 	public Authentication getAuthentication(String token) {

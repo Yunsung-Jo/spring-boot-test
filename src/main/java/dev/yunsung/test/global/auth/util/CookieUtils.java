@@ -17,11 +17,11 @@ public class CookieUtils {
 	public CookieUtils(
 		@Value("${cookie.secure}") boolean secure,
 		@Value("${cookie.same-site}") String sameSite,
-		@Value("${jwt.refresh-expiration}") long refreshExpiration
+		@Value("${jwt.refresh-expires-in}") long refreshExpiresIn
 	) {
 		this.secure = secure;
 		this.sameSite = sameSite;
-		this.refreshTokenMaxAge = refreshExpiration / 1000; // ms -> s
+		this.refreshTokenMaxAge = refreshExpiresIn;
 	}
 
 	public ResponseCookie createRefreshToken(String refreshToken) {
