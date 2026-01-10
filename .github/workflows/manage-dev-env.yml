@@ -13,6 +13,9 @@ on:
           - update
           - status
 
+permissions:
+  id-token: write
+
 env:
   AWS_REGION: ap-northeast-2
   EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
