@@ -90,40 +90,50 @@ jobs:
       - name: Deploy with SSM
         if: inputs.action == 'start' || inputs.action == 'update'
         run: |
-          echo "🚀 SSM으로 배포 명령 전송 중..."
-
-          # [중요 수정] 내부 쌍따옴표(") 앞에 역슬래시(\)를 붙여야 AWS CLI 전송 시 안 깨집니다.
-          # 특히 JDBC URL은 특수문자(&)가 있어서 반드시 따옴표로 감싸야 합니다.
-          commands=$(cat <<EOF
-            #!/bin/bash
-            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          echo "🚀 SSM으로 배포 명령 준비 중..."
           
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
-            docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          # 1. 배포 스크립트를 파일로 먼저 작성합니다.
+          # (GitHub Actions가 secrets 변수들을 이 파일 안에 예쁘게 채워줍니다)
+          cat <<EOF > deploy_script.sh
+          #!/bin/bash
+          export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
           
-            docker stop my-app || true
-            docker rm my-app || true
+          # ECR 로그인
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
           
-            docker run -d --name my-app \
-              -p 80:8080 \
-              -e SPRING_PROFILES_ACTIVE=dev \
-              -e SPRING_DATASOURCE_URL=\"jdbc:mysql://${{ secrets.RDS_ENDPOINT }}:3306/mydb?serverTimezone=Asia/Seoul&characterEncoding=UTF-8\" \
-              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
-              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          # 이미지 Pull
+          docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+          # 기존 컨테이너 삭제
+          docker stop my-app || true
+          docker rm my-app || true
+          
+          # 새 컨테이너 실행 (따옴표 문제 해결됨)
+          docker run -d --name my-app \
+            -p 80:8080 \
+            -e SPRING_PROFILES_ACTIVE=dev \
+            -e SPRING_DATASOURCE_URL="jdbc:mysql://${{ secrets.RDS_ENDPOINT }}:3306/mydb?serverTimezone=Asia/Seoul&characterEncoding=UTF-8" \
+            -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
+            -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           EOF
-          )
-
-          # commands 변수를 넘길 때 JSON 형식이 깨지지 않도록 주의
+          
+          # 2. 스크립트 내용을 Base64로 인코딩합니다. (특수문자 에러 원천 차단)
+          B64_SCRIPT=$(base64 -w 0 deploy_script.sh)
+          
+          # 3. 인코딩된 코드를 SSM으로 전송합니다.
+          # (EC2 내부에서: base64 디코딩 -> 바로 실행)
+          echo "🚀 SSM 명령 전송 중..."
           SH_ID=$(aws ssm send-command \
             --instance-ids ${{ env.EC2_INSTANCE_ID }} \
             --document-name "AWS-RunShellScript" \
-            --parameters commands="[$commands]" \
+            --parameters "commands=[echo $B64_SCRIPT | base64 -d | bash]" \
             --query "Command.CommandId" \
             --output text)
           
           echo "⏳ 명령 실행 시작 (ID: $SH_ID)"
-
+          
+          # 4. 결과 대기
           while true; do
             STATUS=$(aws ssm get-command-invocation --command-id "$SH_ID" --instance-id ${{ env.EC2_INSTANCE_ID }} --query "Status" --output text)
           
