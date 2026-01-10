@@ -1,0 +1,85 @@
+name: Manage Dev Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      actions:
+        description: '개발 서버 관리'
+        required: true
+        type: choice
+        options:
+          - start
+          - stop
+          - status
+
+env:
+  AWS_REGION: ap-northeast-2
+  EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+  RDS_INSTANCE_ID: ${{secrets.RDS_INSTANCE_ID}}
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPOSITORY: backend-ecr
+  IMAGE_TAG: latest
+
+jobs:
+  manage-server:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v2
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Start RDS & EC2
+        if: ${{ inputs.action == 'start' }}
+        run: |
+          echo "Starting RDS..."
+          aws rds start-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already running or processing"
+          
+          echo "Starting EC2..."
+          aws ec2 start-instances --instance-ids ${{ env.EC2_INSTANCE_ID }}
+          
+          echo "Waiting for EC2 to be fully running..."
+          aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }}
+
+      - name: Stop EC2 & RDS
+        if: ${{ inputs.action == 'stop' }}
+        run: |
+          echo "Stopping EC2..."
+          aws ec2 stop-instances --instance-ids ${{ env.EC2_INSTANCE_ID }}
+          
+          echo "Stopping RDS..."
+          aws rds stop-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already stopped"
+
+      - name: Check Status
+        if: ${{ inputs.action == 'check-status' }}
+        run: |
+          # 1. EC2 상태 조회
+          EC2_STATE=$(aws ec2 describe-instances \
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --query "Reservations[*].Instances[*].State.Name" \
+            --output text)
+          
+          # 2. RDS 상태 조회
+          RDS_STATE=$(aws rds describe-db-instances \
+            --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} \
+            --query "DBInstances[*].DBInstanceStatus" \
+            --output text)
+          
+          # 3. 요약 리포트 작성
+          echo "### 🔍 현재 서버 상태 보고서" >> $GITHUB_STEP_SUMMARY
+          echo "| 리소스 | 상태 |" >> $GITHUB_STEP_SUMMARY
+          echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "$EC2_STATE" == "running" ]; then
+            echo "| EC2 | ✅ 실행 중 (running) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| EC2 | 🛑 정지됨 ($EC2_STATE) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          if [ "$RDS_STATE" == "available" ]; then
+            echo "| RDS | ✅ 사용 가능 (available) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| RDS | 🛑 정지/준비 중 ($RDS_STATE) |" >> $GITHUB_STEP_SUMMARY
+          fi
