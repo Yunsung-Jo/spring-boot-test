@@ -84,7 +84,7 @@ jobs:
           aws rds stop-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already stopped"
 
       - name: Check Status
-        if: ${{ inputs.action == 'check-status' }}
+        if: ${{ inputs.action == 'status' }}
         run: |
           # 1. EC2 상태 조회
           EC2_STATE=$(aws ec2 describe-instances \
