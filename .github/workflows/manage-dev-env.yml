@@ -15,11 +15,12 @@ on:
 
 permissions:
   id-token: write
+  contents: read
 
 env:
   AWS_REGION: ap-northeast-2
   EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
-  RDS_INSTANCE_ID: ${{secrets.RDS_INSTANCE_ID}}
+  RDS_INSTANCE_ID: ${{ secrets.RDS_INSTANCE_ID }}
   ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
   ECR_REPOSITORY: backend-ecr
   IMAGE_TAG: latest
@@ -31,7 +32,6 @@ jobs:
       - name: 🐛 Debug Input Value
         run: |
           echo "Selected Action: [${{ inputs.action }}]"
-          echo "Is Start? ${{ inputs.action == 'start' }}"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
@@ -42,42 +42,19 @@ jobs:
       - name: Start RDS & EC2
         if: inputs.action == 'start'
         run: |
-          echo "Starting RDS..."
+          echo "🚀 Starting RDS..."
           aws rds start-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already running or processing"
-          
-          echo "Starting EC2..."
+
+          echo "⏳ Waiting for RDS to be available... (This may take 3-5 mins)"
+          aws rds wait db-instance-available --db-instance-identifier ${{ env.RDS_INSTANCE_ID }}
+          echo "✅ RDS is ready!"
+
+          echo "🚀 Starting EC2..."
           aws ec2 start-instances --instance-ids ${{ env.EC2_INSTANCE_ID }}
           
-          echo "Waiting for EC2 to be fully running..."
+          echo "⏳ Waiting for EC2 to be running..."
           aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }}
-
-      - name: Deploy Latest Image to EC2
-        if: inputs.action == 'start' || inputs.action == 'update'
-        uses: appleboy/ssh-action@v1.0.0
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ec2-user
-          key: ${{ secrets.EC2_SSH_KEY }}
-          port: 22
-          script: |
-            # ECR 로그인
-            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
-            
-            # 최신 이미지 Pull
-            docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-            
-            # 기존 컨테이너 중지/삭제
-            docker stop my-app || true
-            docker rm my-app || true
-            
-            # 새 컨테이너 실행
-            docker run -d --name my-app \
-              -p 80:8080 \
-              -e SPRING_PROFILES_ACTIVE=prod \
-              -e SPRING_DATASOURCE_URL=jdbc:mysql://${{ secrets.RDS_ENDPOINT }}:3306/mydb \
-              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
-              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
-              ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          echo "✅ EC2 is running!"
 
       - name: Stop EC2 & RDS
         if: inputs.action == 'stop'
@@ -91,19 +68,9 @@ jobs:
       - name: Check Status
         if: inputs.action == 'status'
         run: |
-          # 1. EC2 상태 조회
-          EC2_STATE=$(aws ec2 describe-instances \
-            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
-            --query "Reservations[*].Instances[*].State.Name" \
-            --output text)
+          EC2_STATE=$(aws ec2 describe-instances --instance-ids ${{ env.EC2_INSTANCE_ID }} --query "Reservations[*].Instances[*].State.Name" --output text)
+          RDS_STATE=$(aws rds describe-db-instances --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} --query "DBInstances[*].DBInstanceStatus" --output text)
           
-          # 2. RDS 상태 조회
-          RDS_STATE=$(aws rds describe-db-instances \
-            --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} \
-            --query "DBInstances[*].DBInstanceStatus" \
-            --output text)
-          
-          # 3. 요약 리포트 작성
           echo "### 🔍 현재 서버 상태 보고서" >> $GITHUB_STEP_SUMMARY
           echo "| 리소스 | 상태 |" >> $GITHUB_STEP_SUMMARY
           echo "| :--- | :--- |" >> $GITHUB_STEP_SUMMARY
@@ -119,3 +86,56 @@ jobs:
           else
             echo "| RDS | 🛑 정지/준비 중 ($RDS_STATE) |" >> $GITHUB_STEP_SUMMARY
           fi
+
+      - name: Deploy with SSM
+        if: inputs.action == 'start' || inputs.action == 'update'
+        run: |
+          echo "🚀 SSM으로 배포 명령 전송 중..."
+
+          # [중요 수정] 내부 쌍따옴표(") 앞에 역슬래시(\)를 붙여야 AWS CLI 전송 시 안 깨집니다.
+          # 특히 JDBC URL은 특수문자(&)가 있어서 반드시 따옴표로 감싸야 합니다.
+          commands=$(cat <<EOF
+            #!/bin/bash
+            export AWS_DEFAULT_REGION=${{ env.AWS_REGION }}
+          
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+            docker pull ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          
+            docker stop my-app || true
+            docker rm my-app || true
+          
+            docker run -d --name my-app \
+              -p 80:8080 \
+              -e SPRING_PROFILES_ACTIVE=dev \
+              -e SPRING_DATASOURCE_URL=\"jdbc:mysql://${{ secrets.RDS_ENDPOINT }}:3306/mydb?serverTimezone=Asia/Seoul&characterEncoding=UTF-8\" \
+              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          EOF
+          )
+
+          # commands 변수를 넘길 때 JSON 형식이 깨지지 않도록 주의
+          SH_ID=$(aws ssm send-command \
+            --instance-ids ${{ env.EC2_INSTANCE_ID }} \
+            --document-name "AWS-RunShellScript" \
+            --parameters commands="[$commands]" \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "⏳ 명령 실행 시작 (ID: $SH_ID)"
+
+          while true; do
+            STATUS=$(aws ssm get-command-invocation --command-id "$SH_ID" --instance-id ${{ env.EC2_INSTANCE_ID }} --query "Status" --output text)
+          
+            if [ "$STATUS" == "Success" ]; then
+              echo "✅ 배포 성공!"
+              exit 0
+            elif [ "$STATUS" == "Failed" ] || [ "$STATUS" == "Cancelled" ] || [ "$STATUS" == "TimedOut" ]; then
+              echo "❌ 배포 실패! ($STATUS)"
+              aws ssm get-command-invocation --command-id "$SH_ID" --instance-id ${{ env.EC2_INSTANCE_ID }} --query "StandardErrorContent" --output text
+              exit 1
+            fi
+          
+            echo "Thinking... ($STATUS)"
+            sleep 3
+          done
