@@ -28,6 +28,11 @@ jobs:
   manage-server:
     runs-on: ubuntu-latest
     steps:
+      - name: 🐛 Debug Input Value
+        run: |
+          echo "Selected Action: [${{ inputs.action }}]"
+          echo "Is Start? ${{ inputs.action == 'start' }}"
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v5
         with:
