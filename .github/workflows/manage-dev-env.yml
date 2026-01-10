@@ -12,6 +12,9 @@ on:
           - update
           - start
           - stop
+concurrency:
+  group: manage-dev-server
+  cancel-in-progress: false
 permissions:
   id-token: write
   contents: read
@@ -73,11 +76,12 @@ jobs:
              aws rds wait db-instance-available --db-instance-identifier ${{ env.RDS_INSTANCE_ID }}
              echo "✅ RDS 준비 완료!"
           elif [ "${{ env.RDS_STATUS }}" == "available" ]; then
-             echo "✅ RDS가 이미 실행 중입니다. (Pass)"
+             echo "✅ RDS가 이미 실행 중입니다."
           else
              # stopping, rebooting, backing-up 등 애매한 상태
              echo "⚠️ RDS를 시작할 수 없습니다. 현재 상태: [${{ env.RDS_STATUS }}]"
              echo "   (확실히 정지된 상태(stopped)에서만 시작할 수 있습니다.)"
+             exit 1
           fi
 
           if [ "${{ env.EC2_STATUS }}" == "stopped" ]; then
@@ -87,11 +91,12 @@ jobs:
              aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }}
              echo "✅ EC2 실행 완료!"
           elif [ "${{ env.EC2_STATUS }}" == "running" ]; then
-             echo "✅ EC2가 이미 실행 중입니다. (Pass)"
+             echo "✅ EC2가 이미 실행 중입니다."
           else
              # stopping, pending, shutting-down 등
              echo "⚠️ EC2를 시작할 수 없습니다. 현재 상태: [${{ env.EC2_STATUS }}]"
              echo "   (확실히 정지된 상태(stopped)에서만 시작할 수 있습니다.)"
+             exit 1
           fi
 
       - name: Stop EC2 & RDS
@@ -104,7 +109,7 @@ jobs:
              aws ec2 wait instance-stopped --instance-ids ${{ env.EC2_INSTANCE_ID }}
              echo "✅ EC2 정지 완료!"
           elif [ "${{ env.EC2_STATUS }}" == "stopped" ]; then
-             echo "✅ EC2가 이미 꺼져 있습니다. (Pass)"
+             echo "✅ EC2가 이미 꺼져 있습니다."
           else
              echo "⚠️ EC2를 정지할 수 없습니다. 현재 상태: [${{ env.EC2_STATUS }}]"
              echo "   (확실히 실행 중인 상태(running)에서만 정지할 수 있습니다.)"
@@ -113,11 +118,9 @@ jobs:
           if [ "${{ env.RDS_STATUS }}" == "available" ]; then
              echo "🛑 RDS가 실행 중입니다. 정지 명령을 전송합니다..."
              aws rds stop-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }}
-             echo "⏳ RDS가 완전히 꺼질 때까지 대기합니다..."
-             aws rds wait db-instance-stopped --db-instance-identifier ${{ env.RDS_INSTANCE_ID }}
-             echo "✅ RDS 정지 완료!"
+             echo "✅ RDS 정지 명령 전송 완료!"
           elif [ "${{ env.RDS_STATUS }}" == "stopped" ]; then
-             echo "✅ RDS가 이미 꺼져 있습니다. (Pass)"
+             echo "✅ RDS가 이미 꺼져 있습니다."
           else
              echo "⚠️ RDS를 정지할 수 없습니다. 현재 상태: [${{ env.RDS_STATUS }}]"
              echo "   (확실히 사용 가능 상태(available)에서만 정지할 수 있습니다.)"
