@@ -10,6 +10,7 @@ on:
         options:
           - start
           - stop
+          - update
           - status
 
 env:
@@ -42,6 +43,34 @@ jobs:
           
           echo "Waiting for EC2 to be fully running..."
           aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }}
+
+      - name: Deploy Latest Image to EC2
+        if: ${{ inputs.action == 'start' || inputs.action == 'update' }}
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          port: 22
+          script: |
+            # ECR 로그인
+            aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }}
+            
+            # 최신 이미지 Pull
+            docker pull ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+            
+            # 기존 컨테이너 중지/삭제
+            docker stop my-app || true
+            docker rm my-app || true
+            
+            # 새 컨테이너 실행
+            docker run -d --name my-app \
+              -p 80:8080 \
+              -e SPRING_PROFILES_ACTIVE=dev \
+              -e SPRING_DATASOURCE_URL=jdbc:postgresql://${{ secrets.RDS_ENDPOINT }}:5432/mydb \
+              -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
+              -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+              ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
       - name: Stop EC2 & RDS
         if: ${{ inputs.action == 'stop' }}
