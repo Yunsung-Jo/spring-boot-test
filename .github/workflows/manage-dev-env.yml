@@ -128,7 +128,7 @@ jobs:
         run: |
           if [ "${{ inputs.action }}" == "update" ] && [ "${{ env.EC2_STATUS }}" != "running" ]; then
             echo "❌ [오류] 서버가 정지된 상태(${{ env.EC2_STATUS }})에서는 Update를 할 수 없습니다."
-            exit 1
+            exit 0
           fi
           
           echo "🚀 SSM으로 배포 명령 준비 중..."
