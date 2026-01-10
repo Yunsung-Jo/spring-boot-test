@@ -35,7 +35,7 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE }}
 
       - name: Start RDS & EC2
-        if: ${{ inputs.action == 'start' }}
+        if: inputs.action == 'start'
         run: |
           echo "Starting RDS..."
           aws rds start-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already running or processing"
@@ -47,7 +47,7 @@ jobs:
           aws ec2 wait instance-running --instance-ids ${{ env.EC2_INSTANCE_ID }}
 
       - name: Deploy Latest Image to EC2
-        if: ${{ inputs.action == 'start' || inputs.action == 'update' }}
+        if: inputs.action == 'start' || inputs.action == 'update'
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
@@ -75,7 +75,7 @@ jobs:
               ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
 
       - name: Stop EC2 & RDS
-        if: ${{ inputs.action == 'stop' }}
+        if: inputs.action == 'stop'
         run: |
           echo "Stopping EC2..."
           aws ec2 stop-instances --instance-ids ${{ env.EC2_INSTANCE_ID }}
@@ -84,7 +84,7 @@ jobs:
           aws rds stop-db-instance --db-instance-identifier ${{ env.RDS_INSTANCE_ID }} || echo "RDS already stopped"
 
       - name: Check Status
-        if: ${{ inputs.action == 'status' }}
+        if: inputs.action == 'status'
         run: |
           # 1. EC2 상태 조회
           EC2_STATE=$(aws ec2 describe-instances \
