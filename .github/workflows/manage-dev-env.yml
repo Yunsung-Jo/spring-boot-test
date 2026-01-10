@@ -107,17 +107,13 @@ jobs:
           # 기존 컨테이너 삭제
           docker stop my-app || true
           docker rm my-app || true
-          
-          # 새 컨테이너 실행 (따옴표 문제 해결됨)
+
           docker run -d --name my-app \
             -p 80:8080 \
-            -e SPRING_PROFILES_ACTIVE=dev \
-            -e SPRING_DATASOURCE_URL="jdbc:mysql://${{ secrets.RDS_ENDPOINT }}:3306/mydb?serverTimezone=Asia/Seoul&characterEncoding=UTF-8" \
-            -e SPRING_DATASOURCE_USERNAME=${{ secrets.DB_USER }} \
-            -e SPRING_DATASOURCE_PASSWORD=${{ secrets.DB_PASSWORD }} \
+            --env-file /home/ec2-user/.env \
             ${{ secrets.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
           EOF
-          
+
           # 2. 스크립트 내용을 Base64로 인코딩합니다. (특수문자 에러 원천 차단)
           B64_SCRIPT=$(base64 -w 0 deploy_script.sh)
           
