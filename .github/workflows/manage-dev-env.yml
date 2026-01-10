@@ -3,7 +3,7 @@ name: Manage Dev Server
 on:
   workflow_dispatch:
     inputs:
-      actions:
+      action:
         description: '개발 서버 관리'
         required: true
         type: choice
