@@ -8,5 +8,5 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD}
 
 cookie:
-  secure: false
-  same-site: Lax
+  secure: true
+  same-site: None
