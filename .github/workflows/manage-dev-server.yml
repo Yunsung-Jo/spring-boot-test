@@ -166,7 +166,7 @@ jobs:
             --log-opt awslogs-group=/aws/ec2/\$CONTAINER_NAME \
             --log-opt awslogs-stream=deploy-${{ env.IMAGE_TAG }} \
             --log-opt awslogs-create-group=true \
-            $IMAGE
+            \$IMAGE
           EOF
           
           B64_SCRIPT=$(base64 -w 0 deploy_script.sh)
